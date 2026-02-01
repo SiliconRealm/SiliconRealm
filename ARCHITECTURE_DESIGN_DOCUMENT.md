@@ -97,10 +97,12 @@ graph TB
 
 | 属性 | 描述 |
 |------|------|
-| **职责** | 负责系统的初始化 (Genesis) 和演进 (Evolution) |
+| **运行模式** | **常驻进程**，作为用户的第一接口人 |
+| **职责** | 消息路由、领域管理、资源管理、系统初始化 (Genesis) 和演进 (Evolution) |
 | **能力** | 基于 RAG 阅读企业文档，进行 **领域驱动设计 (DDD)**，划分领域边界 |
 | **提案机制** | 生成的领域变更（拆分/合并）仅作为 **提案 (Proposal)**，必须经由 **人类内阁 (The Cabinet)** 在 Dashboard 上批准后生效 |
 | **资源管理** | 统一分配和管理 Knight 配额，为每个领域分配固定配额 |
+| **路由能力** | 用户不清楚找哪个 Lord 时，可通过 King 进行智能路由 |
 
 #### Unified Address Book (统一通讯录)
 
@@ -130,6 +132,13 @@ Lord 不是常驻进程，而是存储在 DB 中的 **配置包 (Profile)**，�
 | **唤醒 (Hydration)** | 当有任务或会议时，Runtime 加载 Profile 启动一个通用 Agent 容器 |
 | **思考 (Reasoning)** | 利用长期记忆 (Vector DB) 拆解任务 |
 | **休眠 (Dehydration)** | 任务分发给 Knight 或会议结束后，保存上下文，销毁容器 |
+
+#### 唤醒触发源
+
+| 触发方式 | 描述 |
+|----------|------|
+| **用户直连** | 用户通过统一通讯录 (Address Book) 查找并直接联系对应 Lord |
+| **King 路由** | 用户不确定找谁时，由 King 分析请求并路由到合适的 Lord |
 
 #### 价值
 
@@ -174,6 +183,14 @@ Lord 不是常驻进程，而是存储在 DB 中的 **配置包 (Profile)**，�
 3. **信息熵检测**：检测会议内容是否保持有效性
 4. 检测死循环
 5. 总结 **会议纪要 (Minutes)**
+
+#### 会议触发机制 (MVP)
+
+| 机制 | 描述 |
+|------|------|
+| **定时触发** | 圆桌会议每天定时触发一次，时间由系统管理员预设 |
+| **议题申报** | Lord 和 King 拥有"申报议题"技能，可在会议前提交当天议题 |
+| **议程生成** | Chairperson 汇总所有申报议题，生成当天会议议程 |
 
 #### 死锁风险防控
 
@@ -243,6 +260,18 @@ Knight 的无状态设计通过 **Spec 驱动** 模式保证执行质量：
 - 每个 Knight 任务是自包含的原子操作
 - 通过规范文档传递必要信息，而非依赖记忆
 
+#### Knight 任务生命周期
+
+| 阶段 | 描述 |
+|------|------|
+| **派发** | Lord 通过 Sandbox 实时交互派发原子任务 |
+| **执行** | Knight 在沙盒中执行任务（代码运行、文件操作等） |
+| **成功** | 交付产物给 Lord（修订文件、新建文档等，视任务而定） |
+| **失败处理** | 上报 Lord，由 Lord 决定：继续 / 重试 / 跳过 |
+| **升级** | Lord 无法抉择时，询问用户 |
+
+**通信方式**：Lord → Knight 采用 **Sandbox 实时交互**（Stdio Tunnel），无需消息队列
+
 #### Knight 配额管理
 
 | 场景 | 处理方式 |
@@ -261,7 +290,64 @@ Knight 的无状态设计通过 **Spec 驱动** 模式保证执行质量：
 
 ---
 
-### 3.5 交互层：Human Interface & Policy
+### 3.5 通信层：Inbox/Outbox 机制
+
+Agent 间采用异步消息通信，实现解耦和可靠投递。
+
+#### 通信架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    异步消息层 (Redis Streams)                │
+│                                                             │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
+│   │ king:inbox  │    │lord:A:inbox │    │lord:B:inbox │    │
+│   └─────────────┘    └─────────────┘    └─────────────┘    │
+│         ▲                  ▲                  ▲             │
+│         │                  │                  │             │
+└─────────┼──────────────────┼──────────────────┼─────────────┘
+          │                  │                  │
+     ┌────┴────┐        ┌────┴────┐        ┌────┴────┐
+     │  King   │◄──────►│ Lord A  │◄──────►│ Lord B  │
+     └─────────┘        └────┬────┘        └─────────┘
+                             │ Sandbox (同步)
+                             ▼
+                        ┌─────────┐
+                        │ Knight  │
+                        └─────────┘
+```
+
+#### 通信模式
+
+| 通信路径 | 模式 | 技术 |
+|----------|------|------|
+| **King ↔ Lord** | 异步消息 | Redis Streams (inbox/outbox) |
+| **Lord ↔ Lord** | 异步消息 | Redis Streams (inbox/outbox) |
+| **Lord → Knight** | 同步调用 | Sandbox 实时交互 (Stdio Tunnel) |
+
+#### 消息结构
+
+```json
+{
+  "id": "msg_uuid",
+  "from": "lord:finance",
+  "to": "king",
+  "type": "request_quota | motion | task_result | alert | ...",
+  "payload": { ... },
+  "timestamp": "2026-02-01T10:00:00Z",
+  "reply_to": "lord:finance:inbox"
+}
+```
+
+#### Agent 技能
+
+每个 Agent 拥有消息相关技能：
+- **King**：路由消息、处理配额申请、处理议题申报
+- **Lord**：给 King 留言、给其他 Lord 留言、申报圆桌议题
+
+---
+
+### 3.6 交互层：Human Interface & Policy
 
 碳基与硅基的连接点。
 
@@ -279,7 +365,7 @@ Knight 的无状态设计通过 **Spec 驱动** 模式保证执行质量：
 
 ---
 
-### 3.6 知识层：The Academy (学院)
+### 3.7 知识层：The Academy (学院)
 
 系统的"智慧图书馆"，用于**共享和持久化**高价值的组织知识。
 
@@ -328,6 +414,14 @@ Knight 的无状态设计通过 **Spec 驱动** 模式保证执行质量：
 | **元数据标注** | 每份知识包含创建时间、更新时间、贡献者等元数据 |
 | **废弃标记** | 过时知识通过元数据标记废弃状态，但保留历史记录 |
 | **演化记录** | 通过 Git commit 记录知识的修改历史和评审过程 |
+
+#### 技术选型 (MVP)
+
+| 组件 | 选型 | 理由 |
+|------|------|------|
+| **向量数据库** | Qdrant | 轻量级、易部署、性能优秀 |
+| **知识存储** | Git 仓库 | 版本控制、协作友好、审计追溯 |
+| **索引粒度** | 段落级 | 平衡检索精度和召回率 |
 
 ---
 
@@ -528,3 +622,4 @@ Knight 的无状态设计通过 **Spec 驱动** 模式保证执行质量：
 - v2.2: Added The Academy for cross-domain knowledge sharing (Knowledge Base, Skill Library, Tool Registry)
 - v2.3: Renamed to Silicon Realm
 - v2.4: MVP refinements - structured roundtable flow (3-round speaking + voting), first-responsible-party principle for domain boundaries, spec-driven Knight execution model, Git-based Academy version control
+- v2.5: Communication architecture - King as resident process, inbox/outbox mechanism (Redis Streams), Lord hydration triggers, Knight task lifecycle, daily roundtable scheduling, Qdrant for Academy
