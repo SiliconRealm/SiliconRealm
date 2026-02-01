@@ -134,9 +134,9 @@ graph TB
 
 | 角色 | 挂载的根目录 (Scope) | 核心能力 (Capabilities) |
 |------|---------------------|------------------------|
-| **King** | `/realm/` (全局视野) | 创建新目录（新领域）、修改 Address Book、调用圆桌议长 |
-| **Lord** | `/realm/fiefdoms/{domain_id}/` | 读取 Academy 知识、派发任务给 Knight、给 King 发送异步消息 |
-| **Knight** | `/realm/fiefdoms/{domain_id}/workshops/{task_id}/` | 极窄视野，只能操作当前任务文件夹，调用受限的本地 CLI 工具 |
+| **King** | `.realm/` (全局视野) | 创建新目录（新领域）、修改 Address Book、调用圆桌议长 |
+| **Lord** | `.realm/fiefdoms/{domain_id}/` | 读取 Academy 知识、派发任务给 Knight、给 King 发送异步消息 |
+| **Knight** | `.realm/fiefdoms/{domain_id}/workshops/{task_id}/` | 极窄视野，只能操作当前任务文件夹，调用受限的本地 CLI 工具 |
 
 ### 3.3 唤醒与休眠的具体实现
 
@@ -174,7 +174,7 @@ graph TB
 ```bash
 # 1. Orchestrator（Queen）收到 Redis Streams 消息
 # 2. 切换到对应 Agent 目录
-cd /realm/fiefdoms/finance_lord/
+cd .realm/fiefdoms/finance_lord/
 
 # 3. 启动 Agent 引擎，仅注入基础身份
 CLI_ENGINE --context=./soul.md,./agent.md,./rules.md --input="新消息内容"
@@ -194,15 +194,80 @@ CLI_ENGINE --context=./soul.md,./agent.md,./rules.md --input="新消息内容"
 # - 所有中间产物、临时思考写在 memory.log 或 workspace/ 中
 ```
 
-#### 休眠 (Dehydration)
+#### 休眠 (Dehydration) — 记忆压缩
+
+休眠不仅仅是保存状态，还需要对短期记忆进行 **压缩整理 (Memory Consolidation)**：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Phase 1: 短期记忆摘要                     │
+│  • 分析本次会话的 memory.log                                │
+│  • 提取关键决策、重要发现、待办事项                         │
+│  • 生成结构化摘要 summary.json                              │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Phase 2: 长期记忆归档                     │
+│  • 将摘要向量化，存入 VectorDB (Qdrant)                     │
+│  • 关联元数据：时间戳、任务ID、相关文件                     │
+│  • 更新 memory/index.json 索引                              │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Phase 3: 状态持久化                       │
+│  • git add . && git commit                                  │
+│  • 清理临时文件（保留摘要）                                 │
+│  • 销毁进程/容器                                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**记忆分层**：
+
+| 层级 | 存储位置 | 内容 | 生命周期 |
+|------|----------|------|----------|
+| **工作记忆** | `memory.log` | 当前会话的完整对话和思考 | 会话结束后清理 |
+| **短期记忆** | `memory/sessions/{date}/` | 每次会话的摘要 | 保留 7 天 |
+| **长期记忆** | VectorDB + `memory/archive/` | 重要决策、经验教训 | 永久保留 |
+
+**摘要结构**：
+
+```json
+{
+  "session_id": "2026-02-01-001",
+  "timestamp": "2026-02-01T10:30:00Z",
+  "task_summary": "完成用户认证模块的设计",
+  "key_decisions": [
+    "采用 JWT 方案",
+    "Token 有效期设为 24 小时"
+  ],
+  "discoveries": [
+    "现有代码库已有 bcrypt 依赖"
+  ],
+  "pending_items": [
+    "等待用户确认刷新 Token 策略"
+  ],
+  "related_files": ["auth/jwt.py", "config/security.yaml"],
+  "tags": ["authentication", "security", "jwt"]
+}
+```
 
 ```bash
-# 1. Agent 完成任务或进入等待
-# 2. 保存状态到文件系统
-git add . && git commit -m "完成任务 X，等待反馈"
+# 休眠流程
+# 1. 生成会话摘要
+agent summarize --output=memory/sessions/2026-02-01/session_001.json
 
-# 3. 关闭进程，销毁容器/Pod
-# 状态保存在哪里？全在文件系统（和 Git 提交历史）里
+# 2. 向量化存入 Qdrant
+queen index-memory --session=session_001.json --collection=lord_finance
+
+# 3. Git 提交
+git add . && git commit -m "Session 001: 完成用户认证模块设计"
+
+# 4. 清理工作记忆
+rm memory.log
+
+# 5. 销毁进程
 ```
 
 ### 3.4 通信的文件系统视角
@@ -211,7 +276,7 @@ git add . && git commit -m "完成任务 X，等待反馈"
 
 ```
 发消息：Lord A 想找 Lord B
-├── Lord A 在 /realm/fiefdoms/lord_b/inbox/ 目录下写入 msg_from_A.json
+├── Lord A 在 .realm/fiefdoms/lord_b/inbox/ 目录下写入 msg_from_A.json
 ├── 文件系统 watcher 捕获到新增文件
 ├── 转化为 Redis Stream 信号
 └── 触发 Lord B 的"唤醒"
@@ -225,6 +290,7 @@ git add . && git commit -m "完成任务 X，等待反馈"
 | **绝对可审计性** | 整个王国的运行史就是一部 Git Commit History，可回溯任何时间点的决策上下文 |
 | **环境一致性** | 复用 Claude Code 等成熟 Agent 客户端的代码执行、文件操作能力 |
 | **无状态性极致** | 只要文件还在（JuiceFS 保证），任何 K8s 节点都能瞬间拉起任何 Lord |
+| **记忆连续性** | 通过记忆压缩机制，Lord 可跨会话保持上下文连贯性 |
 
 ---
 
@@ -780,6 +846,7 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 | AI 骚扰 | Policy Engine 多维过滤 |
 | 知识孤岛 | Academy 强制共享高价值知识 |
 | 知识过时 | 版本管理 + 废弃标记机制 |
+| 记忆丢失 | 记忆压缩 + VectorDB 持久化 + Git 归档 |
 
 ---
 
@@ -812,3 +879,4 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 - v2.4: MVP refinements - structured roundtable flow (3-round speaking + voting), first-responsible-party principle for domain boundaries, spec-driven Knight execution model, Git-based Academy version control
 - v2.5: Communication architecture - King as resident process, inbox/outbox mechanism (Redis Streams), Lord hydration triggers, Knight task lifecycle, daily roundtable scheduling, Qdrant for Academy
 - v2.6: Core philosophy upgrade - Identity-as-Context (Agent = Files + Engine), The Royal Couple (King for strategy, Queen for orchestration), file system as the source of truth, Git-based state management
+- v2.7: Memory Consolidation mechanism - three-tier memory (working/short-term/long-term), session summarization, VectorDB archival, progressive hydration with dynamic context loading
