@@ -1,7 +1,7 @@
 # Architecture Design Document: Silicon Realm
 ## Enterprise-Grade Agentic Organization System
 
-**Version:** 2.3 (Final, Revised)  
+**Version:** 2.6 (Final, Revised)  
 **Date:** 2026-02-01  
 **Status:** Approved for Implementation
 
@@ -22,6 +22,7 @@
 | **无状态运行时 (Stateless Runtime)** | 领主按需唤醒 (Hydration)，用完即走，极低资源占用 |
 | **主动协同 (Proactive Collaboration)** | AI 可通过合规渠道主动触达人类，实现"吹哨人"机制 |
 | **AI自治 → 圆桌共识 → 人类终审** | 决策流程的三层架构，平衡效率与安全 |
+| **身份即目录 (Identity-as-Context)** | Agent 的本质是"配置化的上下文" + "标准化的执行引擎" |
 
 ---
 
@@ -87,22 +88,177 @@ graph TB
 
 ---
 
-## 3. Core Components (核心组件详解)
+## 3. Core Philosophy: Identity-as-Context (核心哲学：身份即目录)
 
-### 3.1 治理层：King & Address Book
+### 3.1 Agent 的本质
 
-系统的"大脑"与"神经中枢"。
+在 Silicon Realm 中，每一个 Agent（King/Lord/Knight）都不是独立编写的程序，而是一个 **特定的文件目录**。
 
-#### King Agent (国王)
+#### DNA 层 (The Files)
+
+| 文件 | 职责 | 示例 |
+|------|------|------|
+| `soul.md` | 定义人格、沟通风格 | King 威严且全局，Knight 简洁且执行导向 |
+| `agent.md` | 定义职责范围、标准工作流 (SOP)、输入输出规范 | Lord 的任务拆解流程 |
+| `rules.md` | 定义合规性约束 | Lord A 不能越权访问 Lord B 的文件 |
+| `tools.json` / `mcp.json` | 定义当前角色被允许调用的工具/MCP 服务 | Knight 只能调用代码执行工具 |
+
+#### 引擎层 (The Engine)
+
+无论是 King 还是 Knight，底层运行的都是 **同一个强力 Agent 客户端**（如 Claude Code CLI、OpenHands 或自研 CLI）。
+
+区别仅仅在于：
+- 启动 CLI 时，挂载的 **Current Working Directory (CWD)** 不同
+- 注入的 **System Prompt**（由上述 `.md` 文件拼接而成）不同
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Agent = Context + Engine                  │
+│                                                             │
+│   ┌─────────────────────┐    ┌─────────────────────┐       │
+│   │   DNA 层 (Files)    │    │   引擎层 (Engine)   │       │
+│   │                     │    │                     │       │
+│   │  • soul.md          │    │  Claude Code CLI    │       │
+│   │  • agent.md         │ +  │  OpenHands          │       │
+│   │  • rules.md         │    │  Custom CLI         │       │
+│   │  • tools.json       │    │  ...                │       │
+│   └─────────────────────┘    └─────────────────────┘       │
+│              ↓                         ↓                    │
+│         身份与约束              统一执行能力                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 三级角色的本质差异：权限与视角
+
+既然"本体"相同，那么 King、Lord、Knight 的区别在于 **文件系统的访问视野**：
+
+| 角色 | 挂载的根目录 (Scope) | 核心能力 (Capabilities) |
+|------|---------------------|------------------------|
+| **King** | `/realm/` (全局视野) | 创建新目录（新领域）、修改 Address Book、调用圆桌议长 |
+| **Lord** | `/realm/fiefdoms/{domain_id}/` | 读取 Academy 知识、派发任务给 Knight、给 King 发送异步消息 |
+| **Knight** | `/realm/fiefdoms/{domain_id}/workshops/{task_id}/` | 极窄视野，只能操作当前任务文件夹，调用受限的本地 CLI 工具 |
+
+### 3.3 唤醒与休眠的具体实现
+
+有了文件系统的视角，原本抽象的运行时机制变得极其具体：
+
+#### 唤醒 (Hydration)
+
+```bash
+# 1. Orchestrator（Queen）收到 Redis Streams 消息
+# 2. 切换到对应 Agent 目录
+cd /realm/fiefdoms/finance_lord/
+
+# 3. 启动 Agent 引擎，注入上下文
+CLI_ENGINE --context=./soul.md,./agent.md,./rules.md --input="新消息内容"
+
+# 4. Agent 引擎启动，读取这些文件作为自己的"意识形态"
+```
+
+#### 思考与执行
+
+```bash
+# Agent 在该目录下工作
+# - 读取 task.md
+# - 编写代码或调用 MCP
+# - 所有中间产物、临时思考写在 memory.log 或 workspace/ 中
+```
+
+#### 休眠 (Dehydration)
+
+```bash
+# 1. Agent 完成任务或进入等待
+# 2. 保存状态到文件系统
+git add . && git commit -m "完成任务 X，等待反馈"
+
+# 3. 关闭进程，销毁容器/Pod
+# 状态保存在哪里？全在文件系统（和 Git 提交历史）里
+```
+
+### 3.4 通信的文件系统视角
+
+异步消息通信（Inbox/Outbox）也可以具象化为文件操作：
+
+```
+发消息：Lord A 想找 Lord B
+├── Lord A 在 /realm/fiefdoms/lord_b/inbox/ 目录下写入 msg_from_A.json
+├── 文件系统 watcher 捕获到新增文件
+├── 转化为 Redis Stream 信号
+└── 触发 Lord B 的"唤醒"
+```
+
+### 3.5 这个设计的核心优势
+
+| 优势 | 描述 |
+|------|------|
+| **极低学习成本** | 创建新领域领主只需创建文件夹，写好 `soul.md` 和 `agent.md`，无需写代码 |
+| **绝对可审计性** | 整个王国的运行史就是一部 Git Commit History，可回溯任何时间点的决策上下文 |
+| **环境一致性** | 复用 Claude Code 等成熟 Agent 客户端的代码执行、文件操作能力 |
+| **无状态性极致** | 只要文件还在（JuiceFS 保证），任何 K8s 节点都能瞬间拉起任何 Lord |
+
+---
+
+## 4. Core Components (核心组件详解)
+
+### 4.1 治理层：The Royal Couple (王室双星)
+
+治理层由 King 和 Queen 共同构成的"双星系统"，分别负责战略与执行。
+
+#### King Agent (国王)：意志与战略
 
 | 属性 | 描述 |
 |------|------|
+| **本体** | 高级 LLM (如 Claude 3.5 Sonnet / O1) |
+| **形态** | 常驻的高层思维进程 |
 | **运行模式** | **常驻进程**，作为用户的第一接口人 |
 | **职责** | 消息路由、领域管理、资源管理、系统初始化 (Genesis) 和演进 (Evolution) |
 | **能力** | 基于 RAG 阅读企业文档，进行 **领域驱动设计 (DDD)**，划分领域边界 |
 | **提案机制** | 生成的领域变更（拆分/合并）仅作为 **提案 (Proposal)**，必须经由 **人类内阁 (The Cabinet)** 在 Dashboard 上批准后生效 |
 | **资源管理** | 统一分配和管理 Knight 配额，为每个领域分配固定配额 |
 | **路由能力** | 用户不清楚找哪个 Lord 时，可通过 King 进行智能路由 |
+
+**King 的核心职能**：
+- **解读愿景**：将人类的模糊意图转化为王国的领域布局
+- **外交与决策**：主持圆桌会议，平息领主间的争议
+- **规则制定**：编写和修订各领域的 `rules.md`
+- **审批建议**：审批 Queen 提交的系统级资源预警
+
+#### Queen Agent (皇后)：编排与律法
+
+| 属性 | 描述 |
+|------|------|
+| **本体** | 高性能系统服务（Go / Rust / Python 编写的逻辑代码 + 轻量级监督 AI） |
+| **形态** | 王国的"心脏"，极低延迟的常驻守护进程 |
+| **核心职能** | 编排调度、资源管控、环境构建、消息投递、安全沙盒 |
+
+**Queen 的核心职能**：
+
+| 职能 | 描述 |
+|------|------|
+| **复水与脱水 (Hydration/Dehydration)** | 唯一拥有"唤醒咒语"的角色，监听 Redis Streams 或文件系统，根据信号拉起对应的 CLI 进程 |
+| **禁卫军管理 (Resource Guard)** | 严格执行 King 设定的配额，超支的 Knight 立即熔断销毁 |
+| **环境构建** | 根据 `agent.md` 和 `soul.md` 动态拼接 Prompt，为领主们准备好"意识环境" |
+| **信息投递** | 负责消息在 Inbox/Outbox 间的物理搬运，确保异步通信的可靠性 |
+| **安全沙盒** | 管理 Kata Containers，确保每一个 Knight 都在隔离的"车间"里干活 |
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    The Royal Couple                          │
+│                                                             │
+│   ┌─────────────────────┐    ┌─────────────────────┐       │
+│   │    👑 King          │    │    👸 Queen         │       │
+│   │    (The Soul)       │    │    (The Engine)     │       │
+│   │                     │    │                     │       │
+│   │  • 战略规划         │    │  • 编排调度         │       │
+│   │  • 领域设计         │    │  • 资源管控         │       │
+│   │  • 规则制定         │    │  • 环境构建         │       │
+│   │  • 争议仲裁         │    │  • 消息投递         │       │
+│   │                     │    │  • 安全沙盒         │       │
+│   └─────────────────────┘    └─────────────────────┘       │
+│              ↓                         ↓                    │
+│         意志与决策                执行与保障                │
+└─────────────────────────────────────────────────────────────┘
+```
 
 #### Unified Address Book (统一通讯录)
 
@@ -114,7 +270,7 @@ graph TB
 
 ---
 
-### 3.2 领域层：Stateless Lords (无状态领主)
+### 4.2 领域层：Stateless Lords (无状态领主)
 
 系统的"中层管理者"。
 
@@ -164,7 +320,7 @@ Lord 不是常驻进程，而是存储在 DB 中的 **配置包 (Profile)**，�
 
 ---
 
-### 3.3 协同层：The Roundtable (圆桌会议)
+### 4.3 协同层：The Roundtable (圆桌会议)
 
 系统的"议事厅"。
 
@@ -220,7 +376,7 @@ MVP 阶段采用结构化、无自由讨论的会议模式，按规章推进：
 
 ---
 
-### 3.4 执行层：Knights & Storage
+### 4.4 执行层：Knights & Storage
 
 系统的"手脚"与"仓库"。
 
@@ -290,7 +446,7 @@ Knight 的无状态设计通过 **Spec 驱动** 模式保证执行质量：
 
 ---
 
-### 3.5 通信层：Inbox/Outbox 机制
+### 4.5 通信层：Inbox/Outbox 机制
 
 Agent 间采用异步消息通信，实现解耦和可靠投递。
 
@@ -347,7 +503,7 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 
 ---
 
-### 3.6 交互层：Human Interface & Policy
+### 4.6 交互层：Human Interface & Policy
 
 碳基与硅基的连接点。
 
@@ -365,7 +521,7 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 
 ---
 
-### 3.7 知识层：The Academy (学院)
+### 4.7 知识层：The Academy (学院)
 
 系统的"智慧图书馆"，用于**共享和持久化**高价值的组织知识。
 
@@ -425,9 +581,9 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 
 ---
 
-## 4. Domain Evolution (领域演进机制)
+## 5. Domain Evolution (领域演进机制)
 
-### 4.1 领域拆分 (场景一)
+### 5.1 领域拆分 (场景一)
 
 **触发条件**：Lord 任务自己的领域混杂了其他领域的内容，不纯粹
 
@@ -441,7 +597,7 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 | 6 | 人类终审 | 系统管理员最终确认 |
 | 7 | 生效 | 执行领域拆分，更新 Address Book |
 
-### 4.2 领域合并 (场景二)
+### 5.2 领域合并 (场景二)
 
 **触发条件**：King 发现领域 A 与领域 B 相关性很高，经常频繁跨域合作
 
@@ -455,7 +611,7 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 | 6 | 人类终审 | 系统管理员最终确认 |
 | 7 | 生效 | 执行领域合并，更新 Address Book |
 
-### 4.3 Review 不合时的处理
+### 5.3 Review 不合时的处理
 
 若 Lord Review 阶段双方意见不合：
 1. **自动调解**：由 Chairperson 进行初步调解
@@ -464,7 +620,7 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 
 ---
 
-## 5. Key Workflows (关键业务流)
+## 6. Key Workflows (关键业务流)
 
 ### 流程一：从文档到组织 (System Genesis)
 
@@ -513,7 +669,7 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 
 ---
 
-## 6. Implementation Strategy (实施策略)
+## 7. Implementation Strategy (实施策略)
 
 ### Phase 1: 基础建设 (The Foundation)
 
@@ -552,7 +708,7 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 
 ---
 
-## 7. Decision Workflow (决策流程)
+## 8. Decision Workflow (决策流程)
 
 ### 核心原则：AI自治 → 圆桌共识 → 人类终审
 
@@ -583,7 +739,7 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 
 ---
 
-## 8. Risk Mitigation (风险缓解)
+## 9. Risk Mitigation (风险缓解)
 
 | 风险 | 缓解措施 |
 |------|----------|
@@ -597,12 +753,14 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 
 ---
 
-## 9. Conclusion (总结)
+## 10. Conclusion (总结)
 
 这套架构将 Cloud IDE 升级为了 **Enterprise OS**：
 
 | 特性 | 价值 |
 |------|------|
+| 身份即目录 (Identity-as-Context) | Agent 本质是配置化上下文，极低学习成本，绝对可审计 |
+| 王室双星 (Royal Couple) | King 负责战略，Queen 负责执行，职责分明 |
 | 圆桌会议 | 解决了 AI 协作无序问题 |
 | 无状态领主 | 解决了大规模部署的成本问题 |
 | 人类内阁 + 策略引擎 | 解决了 AI 的安全与合规问题 |
@@ -623,3 +781,4 @@ Agent 间采用异步消息通信，实现解耦和可靠投递。
 - v2.3: Renamed to Silicon Realm
 - v2.4: MVP refinements - structured roundtable flow (3-round speaking + voting), first-responsible-party principle for domain boundaries, spec-driven Knight execution model, Git-based Academy version control
 - v2.5: Communication architecture - King as resident process, inbox/outbox mechanism (Redis Streams), Lord hydration triggers, Knight task lifecycle, daily roundtable scheduling, Qdrant for Academy
+- v2.6: Core philosophy upgrade - Identity-as-Context (Agent = Files + Engine), The Royal Couple (King for strategy, Queen for orchestration), file system as the source of truth, Git-based state management
