@@ -19,20 +19,47 @@
 
 ### 技术选型
 
-MVP 阶段采用 **Docker Compose** 方案，轻量简洁：
+MVP 阶段采用 **Docker Compose + OpenClaw** 方案：
 
 | 组件 | 选型 | 说明 |
 |------|------|------|
+| **Agent 引擎** | OpenClaw 容器 | 每个 Agent 一个容器实例 |
 | **编排** | Docker Compose | 单机开发环境 |
-| **文件系统** | 本地目录 `.realm/` | 隐藏文件夹，Git 管理 |
+| **文件系统** | 本地目录 `.realm/` | 挂载到容器，载入人格设置 |
 | **消息队列** | Redis 单实例 | Streams 实现 inbox/outbox |
 | **向量数据库** | Qdrant 单实例 | Academy RAG 查询 |
-| **沙盒** | Docker 容器 | Knight 执行环境 |
+| **消息通道** | OpenClaw 内置 | Telegram/Slack/Discord |
+
+### Agent 容器化架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Queen (Python 服务)                       │
+│  • 监听 Redis Streams                                       │
+│  • 启动/停止 OpenClaw 容器                                  │
+│  • 管理容器生命周期                                         │
+└─────────────────────────┬───────────────────────────────────┘
+                          │ docker run
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│              OpenClaw Container (King/Lord/Knight)           │
+│                                                             │
+│   挂载卷:                                                   │
+│   .realm/crown/king/ → /app/config/     (人格配置)         │
+│   .realm/crown/king/workspace/ → /app/workspace/ (工作区)  │
+│                                                             │
+│   环境变量:                                                 │
+│   AGENT_ID=king                                             │
+│   REDIS_URL=redis://redis:6379                              │
+│   ANTHROPIC_API_KEY=xxx                                     │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ### Docker Compose 配置
 
 ```yaml
 version: '3.8'
+
 services:
   redis:
     image: redis:7-alpine
@@ -49,11 +76,53 @@ services:
     build: ./services/queen
     volumes:
       - ./.realm:/realm
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock  # 控制 Docker
     environment:
       - REDIS_URL=redis://redis:6379
       - REALM_PATH=/realm
     depends_on: [redis]
+    networks: [realm-net]
+
+  # King 常驻容器
+  king:
+    image: openclaw/openclaw:latest
+    volumes:
+      - ./.realm/crown/king:/app/config:ro          # 人格配置（只读）
+      - ./.realm/crown/king/workspace:/app/workspace # 工作区
+      - ./.realm:/realm                              # 全局视野
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - AGENT_ID=king
+      - REDIS_URL=redis://redis:6379
+    depends_on: [redis, queen]
+    networks: [realm-net]
+    restart: unless-stopped
+
+networks:
+  realm-net:
+    driver: bridge
+```
+
+### Lord 动态启动模板
+
+```yaml
+# Lord 容器由 Queen 动态启动，模板如下
+# docker-compose -f lord-template.yml up -d
+
+services:
+  lord-{domain_id}:
+    image: openclaw/openclaw:latest
+    container_name: lord-{domain_id}
+    volumes:
+      - ./.realm/fiefdoms/{domain_id}:/app/config:ro
+      - ./.realm/fiefdoms/{domain_id}/workspace:/app/workspace
+      - ./.realm/fiefdoms/{domain_id}:/realm/current  # 领域视野
+      - ./.realm/academy:/realm/academy:ro            # 知识库只读
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - AGENT_ID=lord-{domain_id}
+      - REDIS_URL=redis://redis:6379
+    networks: [realm-net]
 ```
 
 ### 目录结构
@@ -63,10 +132,13 @@ project/
 ├── .realm/                       # 王国根目录（隐藏）
 │   ├── crown/                    # 治理层
 │   │   ├── king/                 # King 配置
-│   │   │   ├── soul.md
-│   │   │   ├── agent.md
-│   │   │   ├── rules.md
-│   │   │   └── tools/
+│   │   │   ├── soul.md           # → OpenClaw system prompt
+│   │   │   ├── agent.md          # → OpenClaw agent config
+│   │   │   ├── rules.md          # → OpenClaw rules
+│   │   │   ├── tools/            # → OpenClaw MCP tools
+│   │   │   ├── workspace/        # King 工作区
+│   │   │   ├── inbox/
+│   │   │   └── outbox/
 │   │   └── queen/                # Queen 服务配置
 │   │       └── config.yaml
 │   ├── fiefdoms/                 # 领域层
@@ -75,9 +147,12 @@ project/
 │   │       ├── agent.md
 │   │       ├── rules.md
 │   │       ├── tools/
+│   │       ├── workspace/
 │   │       ├── inbox/
 │   │       ├── outbox/
 │   │       ├── memory/
+│   │       │   ├── sessions/     # 短期记忆
+│   │       │   └── archive/      # 长期记忆
 │   │       └── workshops/        # Knight 任务目录
 │   │           └── {task_id}/
 │   ├── academy/                  # 知识层
@@ -89,14 +164,25 @@ project/
 │   │   └── minutes/
 │   └── address_book.json         # 统一通讯录
 ├── services/                     # 服务代码
-│   ├── queen/
-│   └── cli/
+│   └── queen/                    # Queen Python 服务
 ├── data/                         # 持久化数据（不入 Git）
 │   ├── redis/
 │   └── qdrant/
 ├── docker-compose.yml
 └── .gitignore
 ```
+
+### OpenClaw 配置映射
+
+OpenClaw 的配置文件与 Silicon Realm 的映射关系：
+
+| Silicon Realm | OpenClaw | 说明 |
+|---------------|----------|------|
+| `soul.md` | `system_prompt.md` | 人格定义 |
+| `agent.md` | `agent.yaml` | 职责与工作流 |
+| `rules.md` | `rules.md` | 约束规则 |
+| `tools/` | `mcp/` | MCP 工具配置 |
+| `workspace/` | `workspace/` | 工作目录 |
 
 ### 任务清单
 
@@ -112,64 +198,93 @@ project/
 
 ## Phase 1: Queen 核心服务 (2 周)
 
-Queen 是整个系统的"心脏"，负责编排调度。
+Queen 是整个系统的"心脏"，负责编排调度 OpenClaw 容器。
 
 ### 核心功能
 
 | 功能 | 描述 | 优先级 |
 |------|------|--------|
 | **消息监听** | 监听 Redis Streams，捕获 inbox 消息 | P0 |
-| **渐进式 Hydration** | 拼接 soul/agent/rules，启动 CLI 进程 | P0 |
-| **Dehydration** | 检测任务完成，执行 git commit，销毁进程 | P0 |
-| **进程管理** | 管理 Agent CLI 进程生命周期 | P0 |
+| **容器启动** | 根据消息目标，启动对应 Lord 的 OpenClaw 容器 | P0 |
+| **容器停止** | 任务完成后，停止并清理容器 | P0 |
+| **记忆压缩** | 休眠前触发记忆摘要和归档 | P0 |
 | **文件系统 Watcher** | 监听 inbox 目录变化，转为 Redis 信号 | P1 |
 
 ### 技术实现
 
 ```python
-# Queen 核心流程伪代码
+# Queen 核心流程
+import docker
+import redis
+
 class Queen:
+    def __init__(self):
+        self.docker_client = docker.from_env()
+        self.redis_client = redis.Redis()
+        self.active_containers = {}
+    
     def listen_inbox(self):
         """监听所有 Agent 的 inbox"""
-        for msg in redis.xread_group('realm:messages'):
+        for msg in self.redis_client.xread_group('realm:messages'):
             agent_id = msg['to']
             self.hydrate(agent_id, msg)
     
     def hydrate(self, agent_id: str, message: dict):
-        """渐进式唤醒 Agent"""
-        agent_path = f".realm/fiefdoms/{agent_id}"
+        """启动 OpenClaw 容器"""
+        agent_path = self.get_agent_path(agent_id)
         
-        # Phase 1: 基础身份加载
-        context = self.load_identity(agent_path)
+        container = self.docker_client.containers.run(
+            image='openclaw/openclaw:latest',
+            name=f'agent-{agent_id}',
+            detach=True,
+            volumes={
+                f'{agent_path}': {'bind': '/app/config', 'mode': 'ro'},
+                f'{agent_path}/workspace': {'bind': '/app/workspace', 'mode': 'rw'},
+            },
+            environment={
+                'ANTHROPIC_API_KEY': os.environ['ANTHROPIC_API_KEY'],
+                'AGENT_ID': agent_id,
+                'REDIS_URL': 'redis://redis:6379',
+                'INPUT_MESSAGE': json.dumps(message),
+            },
+            network='realm-net',
+        )
         
-        # 启动 CLI 进程
-        process = subprocess.Popen([
-            'claude-code', '--context', context,
-            '--input', json.dumps(message)
-        ], cwd=agent_path)
-        
-        self.processes[agent_id] = process
+        self.active_containers[agent_id] = container
     
     def dehydrate(self, agent_id: str):
-        """休眠 Agent"""
-        agent_path = f".realm/fiefdoms/{agent_id}"
+        """停止容器，执行记忆压缩"""
+        container = self.active_containers.get(agent_id)
+        if not container:
+            return
         
-        # Git 提交状态
+        # 1. 触发记忆压缩（容器内执行）
+        container.exec_run('openclaw summarize --output=/app/workspace/memory/')
+        
+        # 2. 索引到 VectorDB
+        self.index_memory(agent_id)
+        
+        # 3. Git 提交
+        agent_path = self.get_agent_path(agent_id)
         subprocess.run(['git', 'add', '.'], cwd=agent_path)
         subprocess.run(['git', 'commit', '-m', f'Dehydrate {agent_id}'], cwd=agent_path)
         
-        # 销毁进程
-        self.processes[agent_id].terminate()
+        # 4. 停止容器
+        container.stop()
+        container.remove()
+        del self.active_containers[agent_id]
 ```
 
 ### 任务清单
 
 | 任务 | 产出 | 完成标准 |
 |------|------|----------|
+| Docker SDK 封装 | 容器管理模块 | 可启动/停止容器 |
 | Redis Streams 封装 | 消息读写模块 | 可发送/接收消息 |
-| 身份加载器 | 读取 soul/agent/rules | 正确拼接 Prompt |
-| 进程管理器 | CLI 进程生命周期 | 可启动/停止进程 |
-| Dehydration 逻辑 | Git 提交 + 进程销毁 | 状态正确保存 |
+| 容器启动逻辑 | 挂载配置 + 启动 OpenClaw | 容器正常运行 |
+| 记忆压缩触发 | 调用容器内 summarize | 摘要正确生成 |
+| VectorDB 索引 | 摘要向量化 | 可检索历史记忆 |
+| Dehydration 逻辑 | Git 提交 + 容器销毁 | 状态正确保存 |
 | 文件 Watcher | inotify 监听 | inbox 变化触发消息 |
 
 ---
@@ -180,7 +295,7 @@ class Queen:
 
 | 功能 | 描述 | 优先级 |
 |------|------|--------|
-| **常驻运行** | King 作为常驻进程，监听用户输入 | P0 |
+| **常驻运行** | King 作为常驻 OpenClaw 容器 | P0 |
 | **消息路由** | 分析用户请求，路由到对应 Lord | P0 |
 | **领域初始化** | 创建新领域目录，生成 Lord 配置文件 | P1 |
 | **Address Book 管理** | 维护领域列表和 Lord 信息 | P1 |
@@ -217,12 +332,13 @@ class Queen:
 ## 工作流
 1. 收到用户消息
 2. 分析消息意图和领域归属
-3. 查询 address_book.json
+3. 查询 /realm/address_book.json
 4. 向目标 Lord 的 inbox 写入消息
 5. 等待 Lord 回复，汇总给用户
 
-## 技能
-- read_address_book: 读取通讯录
+## 可用工具
+- read_file: 读取文件
+- write_file: 写入文件
 - send_message: 向 Lord inbox 发送消息
 - create_domain: 创建新领域（需确认）
 ```
@@ -318,6 +434,30 @@ class Queen:
 | **产物交付** | 完成后将产物写入指定位置 | P0 |
 | **失败上报** | 执行失败时生成错误报告 | P0 |
 
+### Knight 容器启动
+
+Knight 由 Lord 通过 Queen 动态启动，生命周期极短：
+
+```python
+# Lord 派发 Knight 任务
+def dispatch_knight(task_id: str, task_content: dict):
+    workshop_path = f'.realm/fiefdoms/{domain_id}/workshops/{task_id}'
+    
+    # 1. 创建 workshop 目录
+    os.makedirs(workshop_path)
+    
+    # 2. 写入任务文件
+    with open(f'{workshop_path}/task.md', 'w') as f:
+        f.write(task_content['description'])
+    
+    # 3. 请求 Queen 启动 Knight 容器
+    redis.xadd('realm:knight-requests', {
+        'task_id': task_id,
+        'workshop_path': workshop_path,
+        'lord_id': domain_id,
+    })
+```
+
 ### Knight 配置文件
 
 ```markdown
@@ -351,13 +491,14 @@ class Queen:
 1. 读取 task.md
 2. 理解任务要求
 3. 执行操作（代码/文件/命令）
-4. 写入产物
-5. 生成结果报告
+4. 写入产物到 output/
+5. 生成 result.json
 
 ## 约束
 - 只能操作当前 workshop 目录
 - 不能访问其他 Lord 的文件
 - 不能发送消息给其他 Agent
+- 执行完成后容器自动销毁
 ```
 
 ### 任务清单
@@ -483,14 +624,25 @@ class Queen:
 ## 后续演进路径
 
 ```
-MVP (Docker Compose)
+MVP (Docker Compose + OpenClaw)
     ↓
 单机测试 (k3s + 本地 PV)
     ↓
 生产部署 (K8s + JuiceFS + MinIO + Kata)
 ```
 
+### OpenClaw 集成优势
+
+| 能力 | 价值 |
+|------|------|
+| **消息通道** | Telegram/Slack/Discord 开箱即用，Human Interface 零成本 |
+| **主动通知** | 吹哨人机制天然支持 |
+| **工具执行** | 文件操作、代码执行内置 |
+| **MCP 支持** | tools/ 目录自动加载 |
+| **持久化** | 内置记忆管理 |
+
 ---
 
 *Document Version History*
 - v1.0: Initial MVP roadmap based on Architecture v2.6
+- v1.1: Switched to OpenClaw container-based architecture, added container orchestration details
