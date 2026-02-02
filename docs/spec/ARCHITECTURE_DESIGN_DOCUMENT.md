@@ -1,6 +1,6 @@
 # Silicon Realm 架构设计文档
 
-**Version:** 3.0  
+**Version:** 3.4  
 **Date:** 2026-02-02  
 **Status:** Approved for Implementation
 
@@ -27,9 +27,19 @@
 
 Silicon Realm 是一个 **"数字生命体组织"** 平台，超越传统 IDE "人使用工具"的范畴，进化为 **"人管理虚拟员工"** 的协作平台。
 
-系统通过拟人化的 **King (规划者)**、**Lord (管理者)**、**Knight (执行者)** 分层架构，结合 **Roundtable (圆桌会议)** 协同机制和 **Canal (运河)** 基础设施层，实现业务的自动拆解、执行与自我治理。
+系统通过拟人化的 **King (规划者)**、**Lord (管理者)**、**Knight (执行者)** 分层架构，结合 **Roundtable (圆桌会议)** 协作机制和 **Canal (运河)** 基础设施层，实现业务的自动拆解、执行与自我治理。
 
-### 1.2 设计原则
+### 1.2 概念分类
+
+系统中的概念分为三类：
+
+| 类型 | 特征 | 示例 |
+|:-----|:-----|:-----|
+| 角色 (Role) | 拟人化、有身份、常驻或按需存在 | 👑 King, 🏰 Lord, ⚔️ Knight |
+| 基础设施 (Infrastructure) | 常驻运行、提供底层能力 | 🚢 Canal, 📚 Academy, 📕 Address Book |
+| 机制 (Mechanism) | 按需触发、有流程、有参与者 | ⚖️ Roundtable, Genesis, Domain Restructure |
+
+### 1.3 设计原则
 
 | 原则 | 描述 |
 |:-----|:-----|
@@ -80,11 +90,11 @@ Silicon Realm 是一个 **"数字生命体组织"** 平台，超越传统 IDE "�
 │ │    (核心领域)      │ │          │ │(Finance)│ ... │ (Tech)  │       │
 │ └───────────────────┘ │          │ └─────────┘      └─────────┘       │
 │ ┌───────────────────┐ │          │         │              │           │
-│ │  📕 通讯录        │ │          │         └──────┬───────┘           │
-│ │   (GraphDB)       │ │          │                ▼                   │
+│ │  📕 Address Book │ │          │         └──────┬───────┘           │
+│ │     (GraphDB)    │ │          │                ▼                   │
 │ └───────────────────┘ │          │        ┌─────────────┐             │
 │ ┌───────────────────┐ │          │        │  ⚔️ Knights │             │
-│ │  🛡️ 策略引擎      │ │          │        │  (沙箱执行)  │             │
+│ │  🛡️ Policy Engine │ │          │        │  (沙箱执行)  │             │
 │ └───────────────────┘ │          │        └─────────────┘             │
 └───────────────────────┘          └─────────────────────────────────────┘
                                                     │
@@ -112,22 +122,33 @@ Silicon Realm 是一个 **"数字生命体组织"** 平台，超越传统 IDE "�
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        Knowledge Plane (学院)                            │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                  │
-│  │ 📚 知识库    │  │ 🛠️ 技能库    │  │ 🔧 工具注册表│                  │
-│  │ (SOP/案例)   │  │(Prompt模板)  │  │  (MCP工具)   │                  │
+│  │ 📚 Knowledge   │  │ 🛠️ Skill     │  │ 🔧 Tool      │                  │
+│  │    Base       │  │   Library    │  │   Registry   │                  │
+│  │ (SOP/案例)    │  │(Prompt模板)  │  │  (MCP工具)   │                  │
 │  └──────────────┘  └──────────────┘  └──────────────┘                  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 层级职责
+### 2.2 层级与机制
+
+**常驻层级**：
 
 | 层级 | 职责 | 核心组件 |
 |:-----|:-----|:---------|
 | Human Plane | 人类监督与决策终审 | Dashboard, IM 通知 |
-| Orchestration Plane | 全局编排与生命周期管理 | Canal (运河) |
-| Governance Plane | 组织治理与跨域协调 | King, 通讯录, 策略引擎 |
-| Domain Plane | 业务领域执行 | Lords, Knights |
+| Orchestration Plane | 全局编排与生命周期管理 | 🚢 Canal |
+| Governance Plane | 组织治理与跨域协调 | 👑 King, Address Book, Policy Engine |
+| Domain Plane | 业务领域执行 | 🏰 Lords, ⚔️ Knights |
 | Infrastructure | 底层能力支撑 | Redis, Qdrant, JuiceFS, K8s |
-| Knowledge Plane | 知识沉淀与共享 | 知识库, 技能库, 工具注册表 |
+| Knowledge Plane | 知识沉淀与共享 | 📚 Academy (Knowledge Base, Skill Library, Tool Registry) |
+
+**协作机制** (按需触发，非常驻)：
+
+| 机制 | 触发条件 | 参与者 |
+|:-----|:---------|:-------|
+| ⚖️ Roundtable | 领域争议、资源申请、架构变更 | King + 相关 Lords |
+| Genesis | 系统初始化 | Admin + King |
+| Domain Restructure | 领域拆分/合并 | King + 相关 Lords + Admin |
 
 ---
 
@@ -321,7 +342,7 @@ Canal 是王国的基础设施层，如同运河连接各地、运输资源。�
 └─────────────────────────────────────────────────────────────┘
 ```
 
-#### 4.1.4 统一通讯录 (Address Book)
+#### 4.1.4 Address Book (通讯录)
 
 | 属性 | 描述 |
 |:-----|:-----|
@@ -569,7 +590,7 @@ Lord 发现可复用知识 → 提交入库申请 → King 审核 → Academy �
 
 ### 5.4 人类接口
 
-**策略引擎 (Policy Engine)**：
+**Policy Engine (策略引擎)**：
 
 | 属性 | 描述 |
 |:-----|:-----|
@@ -684,10 +705,10 @@ Lord 发现可复用知识 → 提交入库申请 → King 审核 → Academy �
 
 | 重点 | 里程碑 |
 |:-----|:-------|
-| Address Book | 统一通讯录上线 |
+| Address Book | Address Book 上线 |
 | Stateless Runtime | Hydration/Dehydration 机制完成 |
 | Policy Engine | 主动报警功能上线 |
-| Academy 基础架构 | 知识库、技能库、工具注册表基础框架 |
+| Academy 基础架构 | Knowledge Base, Skill Library, Tool Registry 基础框架 |
 
 ### Phase 2.5: 知识沉淀 (Knowledge Consolidation)
 
@@ -695,7 +716,7 @@ Lord 发现可复用知识 → 提交入库申请 → King 审核 → Academy �
 |:-----|:-------|
 | 知识入库流程 | Lord 可提交知识，King 审核 |
 | 知识检索 | 基于 RAG 的跨领域知识查询 |
-| 技能共享 | 通用技能库支持多 Lord 复用 |
+| 技能共享 | 通用 Skill Library 支持多 Lord 复用 |
 
 ### Phase 3: 智慧涌现 (The Intelligence)
 
@@ -752,7 +773,7 @@ Silicon Realm 将 Cloud IDE 升级为 **Enterprise OS**：
 | 双层会话 | 守护会话常驻响应 + Topic 会话任务隔离 |
 | Knight 沙箱 | 安全隔离，用完即毁 |
 | 圆桌会议 | 按需触发的协作机制，解决跨域协调问题 |
-| 人类内阁 + 策略引擎 | 解决 AI 的安全与合规问题 |
+| Human Plane + Policy Engine | 解决 AI 的安全与合规问题 |
 | 学院 | 实现跨领域知识共享，避免重复造轮子 |
 | 三层决策 | AI 自治→圆桌共识→人类终审，平衡效率与安全 |
 
@@ -777,3 +798,4 @@ Silicon Realm 将 Cloud IDE 升级为 **Enterprise OS**：
 | v3.1 | 目录结构：realm/ 改为 agents/，扁平化结构 |
 | v3.2 | Queen 重命名为 Canal (运河)，强调基础设施定位而非角色 |
 | v3.3 | 圆桌会议从"协同层"改为"协作机制"，强调其按需触发的仪式性质 |
+| v3.4 | 文档整理：添加概念分类（角色/基础设施/机制），优化层级职责表 |
