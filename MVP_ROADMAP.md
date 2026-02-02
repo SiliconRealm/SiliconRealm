@@ -1,6 +1,6 @@
 # Silicon Realm MVP 实施路线图
 
-**Version:** 2.3  
+**Version:** 2.4  
 **Date:** 2026-02-02  
 **Status:** Planning  
 **Based on:** Architecture v3.0
@@ -296,7 +296,7 @@ volumes:
 ### King 领域分析技能
 
 ```markdown
-<!-- .realm/crown/king/skills/analyze_domain/SKILL.md -->
+<!-- realm/crown/king/skills/analyze_domain/SKILL.md -->
 ---
 emoji: 🗺️
 ---
@@ -484,7 +484,7 @@ async def start_genesis(service: GenesisService = Depends()):
 ### King 配置
 
 ```markdown
-<!-- .realm/crown/king/AGENTS.md -->
+<!-- realm/crown/king/AGENTS.md -->
 # King Agent
 
 ## 职责
@@ -506,7 +506,7 @@ async def start_genesis(service: GenesisService = Depends()):
 ### King 转接技能
 
 ```markdown
-<!-- .realm/crown/king/skills/request_handover/SKILL.md -->
+<!-- realm/crown/king/skills/request_handover/SKILL.md -->
 ---
 emoji: 🤝
 ---
@@ -655,10 +655,84 @@ Tech Lord 执行任务
 
 ---
 
+## 附录
+
+### A. API 接口清单
+
+| 接口 | 方法 | 描述 |
+|------|------|------|
+| `/api/genesis/materials` | POST | 上传创世材料 |
+| `/api/genesis/domains` | GET | 获取领域划分方案 |
+| `/api/genesis/domains` | POST | 创建领域 |
+| `/api/genesis/start` | POST | 启动所有 Lord |
+| `/api/lords` | GET | 获取所有 Lord 列表 |
+| `/api/lords/{id}` | GET | 获取单个 Lord 详情 |
+| `/api/lords/{id}/status` | GET | 获取 Lord 容器状态 |
+| `/api/address-book` | GET | 获取通讯录 |
+
+### B. 数据库 Schema
+
+```sql
+-- Lords 表
+CREATE TABLE lords (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    keywords TEXT[],
+    status VARCHAR(20) DEFAULT 'created',  -- created, running, stopped
+    container_id VARCHAR(100),
+    telegram_bot_username VARCHAR(100),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Domain Map 历史（用于审计）
+CREATE TABLE domain_map_history (
+    id SERIAL PRIMARY KEY,
+    version VARCHAR(20) NOT NULL,
+    content JSONB NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 创世材料
+CREATE TABLE genesis_materials (
+    id SERIAL PRIMARY KEY,
+    filename VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    uploaded_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### C. 前端页面清单
+
+| 页面 | 路由 | 功能 |
+|------|------|------|
+| 仪表盘 | `/` | 系统状态概览、Lord 运行状态 |
+| 创世 | `/genesis` | 上传材料、查看方案、确认创世 |
+| Lord 列表 | `/lords` | 查看所有 Lord、状态监控 |
+| Lord 详情 | `/lords/:id` | 单个 Lord 详情、日志查看 |
+
+### D. 环境变量
+
+```bash
+# .env 示例
+POSTGRES_PASSWORD=your_password
+ANTHROPIC_API_KEY=your_api_key
+
+# King Telegram Bot
+KING_TELEGRAM_BOT_TOKEN=your_king_bot_token
+
+# Lord Telegram Bots（创世后配置）
+TECH_LORD_TELEGRAM_BOT_TOKEN=your_tech_lord_bot_token
+FINANCE_LORD_TELEGRAM_BOT_TOKEN=your_finance_lord_bot_token
+```
+
+---
+
 ## 后续迭代路径
 
 ```
-MVP (4 周)
+MVP (3 周)
   └─ 创世 + King/Lord 常驻 + 基础转接
       ↓
 v0.2 (2 周)
