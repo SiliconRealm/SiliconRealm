@@ -1,6 +1,6 @@
 # Silicon Realm MVP 实施路线图
 
-**Version:** 2.5  
+**Version:** 2.6  
 **Date:** 2026-02-02  
 **Status:** Planning  
 **Based on:** Architecture v3.0
@@ -39,17 +39,33 @@
 
 ### 项目初始化 CLI
 ```bash
-# 后端 (Python)
-uv init backend
-cd backend && uv add fastapi uvicorn sqlalchemy asyncpg
+# 创建项目根目录
+mkdir silicon-realm && cd silicon-realm
 
-# 前端 (React + shadcn)
-pnpm create vite frontend --template react-ts
-cd frontend
+# 初始化 apps/api (FastAPI)
+mkdir -p apps/api && cd apps/api
+uv init . && uv add fastapi uvicorn sqlalchemy asyncpg redis
+cd ../..
+
+# 初始化 apps/web (React + shadcn)
+mkdir -p apps/web && cd apps/web
+pnpm create vite . --template react-ts
 pnpm add -D tailwindcss postcss autoprefixer
 pnpm dlx shadcn@latest init
-pnpm dlx shadcn@latest add button card table dialog form input
+pnpm dlx shadcn@latest add button card table dialog form input badge tabs
 pnpm add @tanstack/react-router @tanstack/react-query
+cd ../..
+
+# 初始化 services/queen (编排引擎)
+mkdir -p services/queen && cd services/queen
+uv init . && uv add docker redis
+cd ../..
+
+# 创建 agents 目录结构
+mkdir -p agents/{king/skills,genesis}
+
+# 创建 docs 目录
+mkdir -p docs/spec
 ```
 
 ### MVP 简化
@@ -107,16 +123,29 @@ pnpm add @tanstack/react-router @tanstack/react-query
 │  • 任务转接            │     │                       │
 └───────────────────────┘     └───────────────────────┘
                 │                         │
-                │     ┌───────────────────┤
-                │     │                   │
-                ▼     ▼                   ▼
+                └────────────┬────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    🌐 Backend (FastAPI)                      │
+│  • Web API 服务                                             │
+│  • 数据持久化 (PostgreSQL)                                  │
+│  • 前端交互接口                                             │
+└─────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    👸 Queen (Python 服务)                    │
+│  • 容器编排引擎                                             │
 │  • 创世时创建 Lord 配置并启动容器                           │
-│  • 领域重整时的容器编排                                     │
-│  • 健康检查交给 Docker Compose (restart: unless-stopped)    │
+│  • 领域重整时的容器生命周期管理                             │
+│  • 监听 Backend 的编排指令                                  │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**职责分离**：
+- **Backend**：Web API 服务，处理前端请求，数据持久化
+- **Queen**：编排引擎，管理容器生命周期，执行创世/重整操作
 
 **关键变化**：Lord 是常驻的，不是按需启动
 
@@ -177,59 +206,58 @@ pnpm add @tanstack/react-router @tanstack/react-query
 ### 目录结构
 
 ```
-project/
-├── realm/                           # Agent 配置（王国）
-│   ├── crown/
-│   │   ├── king/
-│   │   │   ├── SOUL.md
-│   │   │   ├── AGENTS.md
-│   │   │   └── skills/
-│   │   └── queen/
-│   │       └── config.yaml
-│   ├── fiefdoms/                    # Lord 配置（创世后生成）
+silicon-realm/
+├── apps/                            # 应用层
+│   ├── web/                         # React 前端
+│   │   ├── src/
+│   │   │   ├── routes/
+│   │   │   ├── components/
+│   │   │   └── lib/
+│   │   ├── package.json
+│   │   └── Dockerfile
+│   └── api/                         # FastAPI 后端
+│       ├── src/
+│       │   ├── routes/
+│       │   ├── models/
+│       │   └── services/
+│       ├── pyproject.toml
+│       └── Dockerfile
+│
+├── services/                        # 服务层
+│   └── queen/                       # Queen 编排引擎
+│       ├── src/
+│       │   ├── orchestrator.py
+│       │   ├── genesis.py
+│       │   └── lord_manager.py
+│       ├── pyproject.toml
+│       └── Dockerfile
+│
+├── agents/                          # Agent 配置
+│   ├── king/                        # King
+│   │   ├── SOUL.md
+│   │   ├── AGENTS.md
+│   │   └── skills/
+│   ├── {domain_id}/                 # Lord（创世后生成）
+│   │   ├── SOUL.md
+│   │   ├── AGENTS.md
+│   │   └── skills/
 │   ├── genesis/                     # 创世材料
 │   ├── domain_map.json
 │   └── address_book.json
-├── backend/                         # FastAPI 后端
-│   ├── src/
-│   │   ├── domain/                  # DDD 领域层
-│   │   │   ├── genesis/             # 创世领域
-│   │   │   │   ├── entities.py
-│   │   │   │   ├── services.py
-│   │   │   │   └── repository.py
-│   │   │   └── orchestration/       # 编排领域
-│   │   │       ├── entities.py
-│   │   │       ├── services.py
-│   │   │       └── repository.py
-│   │   ├── infrastructure/          # 基础设施层
-│   │   │   ├── database.py
-│   │   │   ├── docker_client.py
-│   │   │   └── redis_client.py
-│   │   ├── api/                     # API 层
-│   │   │   ├── routes/
-│   │   │   │   ├── genesis.py
-│   │   │   │   └── lords.py
-│   │   │   └── main.py
-│   │   └── tests/                   # TDD 测试
-│   │       ├── domain/
-│   │       └── api/
-│   ├── pyproject.toml
-│   └── Dockerfile
-├── frontend/                        # React 前端
-│   ├── src/
-│   │   ├── routes/                  # TanStack Router
-│   │   │   ├── __root.tsx
-│   │   │   ├── index.tsx            # 首页/仪表盘
-│   │   │   ├── genesis.tsx          # 创世页面
-│   │   │   └── lords.tsx            # Lord 管理
-│   │   ├── components/
-│   │   ├── api/                     # API 调用
-│   │   └── main.tsx
-│   ├── package.json
-│   └── Dockerfile
+│
+├── docs/                            # 文档
+│   └── spec/
+│
 ├── docker-compose.yml
-└── .env
+├── .env
+└── README.md
 ```
+
+**结构说明**：
+- `apps/` - 面向用户的应用（Web UI、API）
+- `services/` - 后台服务（Queen 编排引擎）
+- `agents/` - Agent 配置（King 和各 Lord 平级）
+- `docs/` - 项目文档
 
 ### Docker Compose
 
@@ -237,6 +265,7 @@ project/
 version: '3.8'
 
 services:
+  # ============ 基础设施 ============
   postgres:
     image: postgres:16-alpine
     environment:
@@ -249,43 +278,54 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
     networks: [realm-net]
-  
-  backend:
-    build: ./backend
+
+  # ============ 应用层 ============
+  api:
+    build: ./apps/api
     ports: ["8000:8000"]
     volumes:
-      - ./realm:/realm
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ./agents:/agents:ro
     environment:
       - DATABASE_URL=postgresql://realm:${POSTGRES_PASSWORD}@postgres:5432/silicon_realm
       - REDIS_URL=redis://redis:6379
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     depends_on: [postgres, redis]
     networks: [realm-net]
 
-  frontend:
-    build: ./frontend
+  web:
+    build: ./apps/web
     ports: ["3000:3000"]
     environment:
       - VITE_API_URL=http://localhost:8000
-    depends_on: [backend]
+    depends_on: [api]
     networks: [realm-net]
 
+  # ============ 服务层 ============
+  queen:
+    build: ./services/queen
+    volumes:
+      - ./agents:/agents
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    depends_on: [redis]
+    networks: [realm-net]
+
+  # ============ Agent 层 ============
   king:
     image: openclaw/openclaw:latest
     volumes:
-      - ./realm/crown/king:/app/workspace
-      - ./realm:/realm
+      - ./agents/king:/app/workspace
+      - ./agents:/agents:ro
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - TELEGRAM_BOT_TOKEN=${KING_TELEGRAM_BOT_TOKEN}
-    depends_on: [redis, backend]
+    depends_on: [redis]
     networks: [realm-net]
     restart: unless-stopped
 
-  # Lord 容器由 backend 在创世后动态启动
+  # Lord 容器由 Queen 动态创建
 
 networks:
   realm-net:
@@ -299,11 +339,12 @@ volumes:
 
 | 任务 | 完成标准 |
 |------|----------|
-| 创建目录结构 | `realm/`, `backend/`, `frontend/` 就位 |
+| 创建项目结构 | `apps/`, `services/`, `agents/`, `docs/` 就位 |
 | docker-compose.yml | 可启动所有服务 |
 | 配置 King Telegram Bot | King 可接收用户消息 |
 | 初始化 PostgreSQL | 数据库 schema 就绪 |
-| 初始化前端项目 | React + TanStack Router 骨架 |
+| 初始化 apps/web | React + shadcn 骨架 |
+| 初始化 services/queen | 编排引擎骨架 |
 
 ---
 
@@ -312,7 +353,7 @@ volumes:
 ### King 领域分析技能
 
 ```markdown
-<!-- realm/crown/king/skills/analyze_domain/SKILL.md -->
+<!-- agents/king/skills/analyze_domain/SKILL.md -->
 ---
 emoji: 🗺️
 ---
@@ -337,10 +378,10 @@ emoji: 🗺️
 4. 生成最终 domain_map.json
 
 ## 输入
-- /realm/genesis/ 目录下的业务材料
+- /agents/genesis/ 目录下的业务材料
 
 ## 输出
-- /realm/domain_map.json - 领域划分方案
+- /agents/domain_map.json - 领域划分方案
 
 ## 领域划分原则
 1. 基于业务领域而非技术栈
@@ -372,92 +413,73 @@ emoji: 🗺️
 ```
 ```
 
-### Queen 创世流程（后端实现）
+### Queen 创世执行器
 
 ```python
-# backend/src/domain/genesis/services.py
+# services/queen/src/genesis.py
 
-class GenesisService:
-    """创世服务 - DDD 领域服务"""
+class GenesisExecutor:
+    """创世执行器"""
     
-    def __init__(self, docker_client: DockerClient, db: Database):
+    def __init__(self, docker_client, redis):
         self.docker = docker_client
-        self.db = db
+        self.redis = redis
     
-    async def create_lord(self, domain: DomainEntity) -> Lord:
-        """创建 Lord 配置目录和容器"""
-        lord_path = f'realm/fiefdoms/{domain.id}'
-        os.makedirs(lord_path, exist_ok=True)
+    async def execute(self, domain_map: dict):
+        """执行创世"""
+        for domain in domain_map['domains']:
+            await self._create_lord_config(domain)
+            await self._start_lord_container(domain)
         
-        # 生成 SOUL.md
-        await self._generate_soul(lord_path, domain)
-        
-        # 生成 AGENTS.md
-        await self._generate_agents(lord_path, domain)
-        
-        # 持久化到数据库
-        lord = Lord(
-            id=domain.id,
-            name=domain.name,
-            status='created',
-        )
-        await self.db.lords.create(lord)
-        
-        return lord
+        await self.redis.publish('genesis:completed', json.dumps({
+            'lords': [d['id'] for d in domain_map['domains']]
+        }))
     
-    async def start_all_lords(self) -> list[Lord]:
-        """启动所有 Lord 容器"""
-        lords = await self.db.lords.get_all()
+    async def _create_lord_config(self, domain: dict):
+        """创建 Lord 配置"""
+        path = f'/agents/{domain["id"]}'
+        os.makedirs(path, exist_ok=True)
         
-        for lord in lords:
-            await self._start_lord_container(lord)
-            lord.status = 'running'
-            await self.db.lords.update(lord)
-        
-        return lords
+        with open(f'{path}/SOUL.md', 'w') as f:
+            f.write(self._gen_soul(domain))
+        with open(f'{path}/AGENTS.md', 'w') as f:
+            f.write(self._gen_agents(domain))
     
-    async def _start_lord_container(self, lord: Lord):
-        """启动单个 Lord 容器"""
+    async def _start_lord_container(self, domain: dict):
+        """启动 Lord 容器"""
         self.docker.containers.run(
             image='openclaw/openclaw:latest',
-            name=f'lord-{lord.id}',
+            name=f'lord-{domain["id"]}',
             detach=True,
             volumes={
-                f'realm/fiefdoms/{lord.id}': {'bind': '/app/workspace', 'mode': 'rw'},
-                'realm': {'bind': '/realm', 'mode': 'ro'},
+                f'agents/{domain["id"]}': {'bind': '/app/workspace'},
+                'agents': {'bind': '/agents', 'mode': 'ro'},
             },
             environment={
                 'ANTHROPIC_API_KEY': os.environ['ANTHROPIC_API_KEY'],
-                'TELEGRAM_BOT_TOKEN': os.environ[f'{lord.id.upper()}_LORD_TELEGRAM_BOT_TOKEN'],
-                'AGENT_ID': f'lord-{lord.id}',
+                'TELEGRAM_BOT_TOKEN': os.environ[domain['telegram_bot_token_env']],
             },
             network='realm-net',
             restart_policy={'Name': 'unless-stopped'},
         )
 ```
 
-```python
-# backend/src/api/routes/genesis.py
+### API 路由
 
-from fastapi import APIRouter, Depends
-from src.domain.genesis.services import GenesisService
+```python
+# apps/api/src/routes/genesis.py
+
+from fastapi import APIRouter
+import redis
 
 router = APIRouter(prefix="/api/genesis", tags=["genesis"])
 
-@router.post("/domains")
-async def create_domain(
-    domain: DomainCreate,
-    service: GenesisService = Depends()
-):
-    """创建领域（Admin 确认后调用）"""
-    lord = await service.create_lord(domain)
-    return {"lord_id": lord.id, "status": lord.status}
-
 @router.post("/start")
-async def start_genesis(service: GenesisService = Depends()):
-    """启动所有 Lord 容器"""
-    lords = await service.start_all_lords()
-    return {"started": len(lords), "lords": [l.id for l in lords]}
+async def start_genesis(db = Depends()):
+    """触发创世 - 发送指令给 Queen"""
+    domain_map = await db.get_domain_map()
+    redis.publish('queen:genesis', json.dumps(domain_map))
+    return {"status": "started"}
 ```
 
 ### 创世流程（多轮对话）
@@ -488,10 +510,11 @@ async def start_genesis(service: GenesisService = Depends()):
 | 任务 | 完成标准 |
 |------|----------|
 | analyze_domain 技能 | King 能分析材料生成 domain_map |
-| GenesisService | 后端能创建 Lord 配置并启动容器 |
-| Genesis API | `/api/genesis/*` 接口可用 |
+| GenesisExecutor | Queen 能创建 Lord 配置并启动容器 |
+| Genesis API | Backend `/api/genesis/*` 接口可用 |
+| Queen 指令监听 | Queen 能接收并执行编排指令 |
 | 前端创世页面 | 能上传材料、查看方案、确认创世 |
-| TDD 测试 | GenesisService 单元测试通过 |
+| TDD 测试 | GenesisExecutor 单元测试通过 |
 
 ---
 
@@ -500,7 +523,7 @@ async def start_genesis(service: GenesisService = Depends()):
 ### King 配置
 
 ```markdown
-<!-- realm/crown/king/AGENTS.md -->
+<!-- agents/king/AGENTS.md -->
 # King Agent
 
 ## 职责
@@ -522,7 +545,7 @@ async def start_genesis(service: GenesisService = Depends()):
 ### King 转接技能
 
 ```markdown
-<!-- realm/crown/king/skills/request_handover/SKILL.md -->
+<!-- agents/king/skills/request_handover/SKILL.md -->
 ---
 emoji: 🤝
 ---
@@ -776,3 +799,5 @@ v1.0
 - v2.3: Lord is persistent, added Genesis flow
 - v2.4: Added tech stack (FastAPI+PostgreSQL, React+TanStack Router), dev standards (DDD/FDD/TDD/KISS/DRY), Conventional Commits
 - v2.5: Frontend uses shadcn/ui, added CLI init commands
+- v2.6: Separated Queen from Backend, reorganized project structure (apps/services/agents/docs)
+- v2.7: Changed realm/ to agents/ with flat structure (King and Lords at same level)
