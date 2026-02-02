@@ -1,6 +1,6 @@
 # Silicon Realm MVP 实施路线图
 
-**Version:** 2.4  
+**Version:** 2.5  
 **Date:** 2026-02-02  
 **Status:** Planning  
 **Based on:** Architecture v3.0
@@ -34,7 +34,23 @@
 | 框架 | React |
 | 路由 | TanStack Router |
 | 状态管理 | TanStack Query |
-| UI | 简洁实用即可 |
+| UI 组件库 | shadcn/ui |
+| 样式 | Tailwind CSS (shadcn 预设) |
+
+### 项目初始化 CLI
+```bash
+# 后端 (Python)
+uv init backend
+cd backend && uv add fastapi uvicorn sqlalchemy asyncpg
+
+# 前端 (React + shadcn)
+pnpm create vite frontend --template react-ts
+cd frontend
+pnpm add -D tailwindcss postcss autoprefixer
+pnpm dlx shadcn@latest init
+pnpm dlx shadcn@latest add button card table dialog form input
+pnpm add @tanstack/react-router @tanstack/react-query
+```
 
 ### MVP 简化
 - 无用户管理（单用户：Admin）
@@ -705,12 +721,12 @@ CREATE TABLE genesis_materials (
 
 ### C. 前端页面清单
 
-| 页面 | 路由 | 功能 |
-|------|------|------|
-| 仪表盘 | `/` | 系统状态概览、Lord 运行状态 |
-| 创世 | `/genesis` | 上传材料、查看方案、确认创世 |
-| Lord 列表 | `/lords` | 查看所有 Lord、状态监控 |
-| Lord 详情 | `/lords/:id` | 单个 Lord 详情、日志查看 |
+| 页面 | 路由 | 功能 | shadcn 组件 |
+|------|------|------|-------------|
+| 仪表盘 | `/` | 系统状态概览、Lord 运行状态 | Card, Badge |
+| 创世 | `/genesis` | 上传材料、查看方案、确认创世 | Dialog, Form, Button |
+| Lord 列表 | `/lords` | 查看所有 Lord、状态监控 | Table, Badge |
+| Lord 详情 | `/lords/:id` | 单个 Lord 详情、日志查看 | Card, Tabs |
 
 ### D. 环境变量
 
@@ -759,3 +775,4 @@ v1.0
 - v2.2: Use OpenClaw Gateway, Lord proactively contacts user
 - v2.3: Lord is persistent, added Genesis flow
 - v2.4: Added tech stack (FastAPI+PostgreSQL, React+TanStack Router), dev standards (DDD/FDD/TDD/KISS/DRY), Conventional Commits
+- v2.5: Frontend uses shadcn/ui, added CLI init commands
