@@ -535,7 +535,7 @@ async def start_genesis(db = Depends()):
 1. 收到用户消息
 2. 分析意图，判断所属领域
 3. 简单问题 → 直接回答
-4. 专业任务 → 查询通讯录 → 转接给 Lord
+4. 专业任务 → 查询 Address Book → 转接给 Lord
 
 ## 转接方式
 告诉用户对应 Lord 的联系方式，让用户直接联系 Lord。
@@ -690,7 +690,7 @@ Tech Lord 执行任务
 - 双层会话（守护 + Topic）
 - 记忆压缩
 - Knight 沙箱
-- Academy 知识库
+- Academy Knowledge Base
 
 ---
 
@@ -707,7 +707,7 @@ Tech Lord 执行任务
 | `/api/lords` | GET | 获取所有 Lord 列表 |
 | `/api/lords/{id}` | GET | 获取单个 Lord 详情 |
 | `/api/lords/{id}/status` | GET | 获取 Lord 容器状态 |
-| `/api/address-book` | GET | 获取通讯录 |
+| `/api/address-book` | GET | 获取 Address Book |
 
 ### B. 数据库 Schema
 
@@ -784,7 +784,7 @@ v0.4 (2 周)
   └─ 双层会话 + 记忆压缩
       ↓
 v0.5 (2 周)
-  └─ Academy 知识库
+  └─ Academy Knowledge Base
       ↓
 v1.0
   └─ 完整圆桌会议 + 多 Lord 协作
@@ -802,3 +802,4 @@ v1.0
 - v2.6: Separated Canal from Backend, reorganized project structure (apps/services/agents/docs)
 - v2.7: Changed realm/ to agents/ with flat structure (King and Lords at same level)
 - v2.8: Renamed Queen to Canal (运河) to emphasize infrastructure role
+- v2.9: Unified naming convention (English first): Address Book, Knowledge Base, etc.
