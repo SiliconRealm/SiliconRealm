@@ -354,7 +354,7 @@
   - [x] 发送测试消息 → **待实测**
   - [x] 观察回复风格是否符合 SOUL.md → **待实测**
 
-### 7.2 Queen 集成验证
+### 7.2 Canal 集成验证
 
 - [x] **Python Docker SDK 控制**
   ```python
@@ -380,8 +380,8 @@
   container.remove()
   ```
 
-  > ✅ **Queen 集成方案确认**：
-  > - Queen 监听 Redis Streams
+  > ✅ **Canal 集成方案确认**：
+  > - Canal 监听 Redis Streams
   > - 收到消息后启动对应 Lord 的 OpenClaw 容器
   > - 通过挂载卷注入身份配置
   > - 任务完成后销毁容器
@@ -475,7 +475,7 @@
 
 1. **实际部署测试**：克隆仓库，运行 docker-setup.sh
 2. **验证配置挂载**：创建测试 Lord，验证 SOUL.md 生效
-3. **集成 Queen**：编写 Python 脚本控制 OpenClaw 容器
+3. **集成 Canal**：编写 Python 脚本控制 OpenClaw 容器
 4. **消息通道测试**：配置 Telegram Bot，验证端到端流程
 
 ---

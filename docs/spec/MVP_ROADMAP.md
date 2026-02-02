@@ -11,7 +11,7 @@
 
 **简化验证**：直接利用 OpenClaw 的网关和会话管理能力，聚焦核心业务流程：
 - 系统创世：King 根据用户材料划分领域，生成常驻 Lord
-- Queen 编排：创世时创建 Lord 配置并启动容器（健康检查交给 Docker Compose）
+- Canal 编排：创世时创建 Lord 配置并启动容器（健康检查交给 Docker Compose）
 - King ↔ Lord 业务流程：任务转接、用户交接
 - 利用 OpenClaw 原生消息通道（无需自建 inbox/outbox）
 
@@ -56,8 +56,8 @@ pnpm dlx shadcn@latest add button card table dialog form input badge tabs
 pnpm add @tanstack/react-router @tanstack/react-query
 cd ../..
 
-# 初始化 services/queen (编排引擎)
-mkdir -p services/queen && cd services/queen
+# 初始化 services/canal (编排引擎)
+mkdir -p services/canal && cd services/canal
 uv init . && uv add docker redis
 cd ../..
 
@@ -100,7 +100,7 @@ mkdir -p docs/spec
   ```
 - 示例：
   ```
-  feat(queen): add genesis flow for creating lords
+  feat(canal): add genesis flow for creating lords
   fix(king): correct domain routing logic
   docs(readme): update setup instructions
   ```
@@ -135,7 +135,7 @@ mkdir -p docs/spec
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    👸 Queen (Python 服务)                    │
+│                    🚢 Canal (Python 服务)                    │
 │  • 容器编排引擎                                             │
 │  • 创世时创建 Lord 配置并启动容器                           │
 │  • 领域重整时的容器生命周期管理                             │
@@ -145,7 +145,7 @@ mkdir -p docs/spec
 
 **职责分离**：
 - **Backend**：Web API 服务，处理前端请求，数据持久化
-- **Queen**：编排引擎，管理容器生命周期，执行创世/重整操作
+- **Canal**：编排引擎，管理容器生命周期，执行创世/重整操作
 
 **关键变化**：Lord 是常驻的，不是按需启动
 
@@ -165,8 +165,8 @@ mkdir -p docs/spec
    - 是否存在职责重叠？
    - 是否需要拆分或合并？
 4. Admin 确认最终方案
-5. Queen 根据 Domain_Map 创建各 Lord 的配置目录
-6. Queen 启动所有 Lord 容器（常驻运行）
+5. Canal 根据 Domain_Map 创建各 Lord 的配置目录
+6. Canal 启动所有 Lord 容器（常驻运行）
 7. 系统就绪，开始服务用户
 ```
 
@@ -196,7 +196,7 @@ mkdir -p docs/spec
 3. 相关 Lord Review 方案
 4. 圆桌会议投票
 5. 人类最终确认
-6. Queen 执行重整（创建/销毁/重配置 Lord 容器）
+6. Canal 执行重整（创建/销毁/重配置 Lord 容器）
 ```
 
 ---
@@ -224,7 +224,7 @@ silicon-realm/
 │       └── Dockerfile
 │
 ├── services/                        # 服务层
-│   └── queen/                       # Queen 编排引擎
+│   └── canal/                       # Canal 编排引擎
 │       ├── src/
 │       │   ├── orchestrator.py
 │       │   ├── genesis.py
@@ -255,7 +255,7 @@ silicon-realm/
 
 **结构说明**：
 - `apps/` - 面向用户的应用（Web UI、API）
-- `services/` - 后台服务（Queen 编排引擎）
+- `services/` - 后台服务（Canal 编排引擎）
 - `agents/` - Agent 配置（King 和各 Lord 平级）
 - `docs/` - 项目文档
 
@@ -301,8 +301,8 @@ services:
     networks: [realm-net]
 
   # ============ 服务层 ============
-  queen:
-    build: ./services/queen
+  canal:
+    build: ./services/canal
     volumes:
       - ./agents:/agents
       - /var/run/docker.sock:/var/run/docker.sock
@@ -325,7 +325,7 @@ services:
     networks: [realm-net]
     restart: unless-stopped
 
-  # Lord 容器由 Queen 动态创建
+  # Lord 容器由 Canal 动态创建
 
 networks:
   realm-net:
@@ -344,7 +344,7 @@ volumes:
 | 配置 King Telegram Bot | King 可接收用户消息 |
 | 初始化 PostgreSQL | 数据库 schema 就绪 |
 | 初始化 apps/web | React + shadcn 骨架 |
-| 初始化 services/queen | 编排引擎骨架 |
+| 初始化 services/canal | 编排引擎骨架 |
 
 ---
 
@@ -413,10 +413,10 @@ emoji: 🗺️
 ```
 ```
 
-### Queen 创世执行器
+### Canal 创世执行器
 
 ```python
-# services/queen/src/genesis.py
+# services/canal/src/genesis.py
 
 class GenesisExecutor:
     """创世执行器"""
@@ -476,9 +476,9 @@ router = APIRouter(prefix="/api/genesis", tags=["genesis"])
 
 @router.post("/start")
 async def start_genesis(db = Depends()):
-    """触发创世 - 发送指令给 Queen"""
+    """触发创世 - 发送指令给 Canal"""
     domain_map = await db.get_domain_map()
-    redis.publish('queen:genesis', json.dumps(domain_map))
+    redis.publish('canal:genesis', json.dumps(domain_map))
     return {"status": "started"}
 ```
 
@@ -500,8 +500,8 @@ async def start_genesis(db = Depends()):
 5. Admin 反馈，King 调整方案
 6. 重复 4-5 直到 Admin 确认满意
 7. King 生成最终 domain_map.json
-8. Admin 确认后通知 Queen: "执行创世"
-9. Queen 创建 Lord 配置并启动容器
+8. Admin 确认后通知 Canal: "执行创世"
+9. Canal 创建 Lord 配置并启动容器
 10. 系统就绪
 ```
 
@@ -510,9 +510,9 @@ async def start_genesis(db = Depends()):
 | 任务 | 完成标准 |
 |------|----------|
 | analyze_domain 技能 | King 能分析材料生成 domain_map |
-| GenesisExecutor | Queen 能创建 Lord 配置并启动容器 |
+| GenesisExecutor | Canal 能创建 Lord 配置并启动容器 |
 | Genesis API | Backend `/api/genesis/*` 接口可用 |
-| Queen 指令监听 | Queen 能接收并执行编排指令 |
+| Canal 指令监听 | Canal 能接收并执行编排指令 |
 | 前端创世页面 | 能上传材料、查看方案、确认创世 |
 | TDD 测试 | GenesisExecutor 单元测试通过 |
 
@@ -624,7 +624,7 @@ Lord 处理任务
 
 | 场景 | 预期结果 |
 |------|----------|
-| 系统创世 | King 分析材料，Queen 创建 Lord |
+| 系统创世 | King 分析材料，Canal 创建 Lord |
 | 用户直接联系 Lord | Lord 正常响应 |
 | 用户通过 King 转接 | 转接流程正常 |
 
@@ -635,7 +635,7 @@ Lord 处理任务
 Admin 上传业务材料
 King 生成 domain_map.json
 Admin 确认
-Queen 创建并启动 Lord
+Canal 创建并启动 Lord
 验证：所有 Lord 容器运行中
 
 测试 2: 直接联系 Lord
@@ -677,7 +677,7 @@ Tech Lord 执行任务
 
 | 验证点 | 成功标准 |
 |--------|----------|
-| 系统创世 | King 能分析材料，Queen 能创建 Lord |
+| 系统创世 | King 能分析材料，Canal 能创建 Lord |
 | Lord 常驻 | 所有 Lord 容器稳定运行（Docker Compose 管理） |
 | 消息通道 | King/Lord 都能通过 Telegram 与用户交流 |
 | 任务转接 | King 能正确转接任务给 Lord |
@@ -794,10 +794,11 @@ v1.0
 
 *Version History*
 - v2.0: Based on Architecture v3.0
-- v2.1: Simplified MVP - focus on Queen orchestration
+- v2.1: Simplified MVP - focus on Canal orchestration
 - v2.2: Use OpenClaw Gateway, Lord proactively contacts user
 - v2.3: Lord is persistent, added Genesis flow
 - v2.4: Added tech stack (FastAPI+PostgreSQL, React+TanStack Router), dev standards (DDD/FDD/TDD/KISS/DRY), Conventional Commits
 - v2.5: Frontend uses shadcn/ui, added CLI init commands
-- v2.6: Separated Queen from Backend, reorganized project structure (apps/services/agents/docs)
+- v2.6: Separated Canal from Backend, reorganized project structure (apps/services/agents/docs)
 - v2.7: Changed realm/ to agents/ with flat structure (King and Lords at same level)
+- v2.8: Renamed Queen to Canal (运河) to emphasize infrastructure role
